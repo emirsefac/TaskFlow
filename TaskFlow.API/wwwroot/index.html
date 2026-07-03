@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TaskFlow — Görev Yönetimi</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.0/signalr.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', system-ui, sans-serif; }
+  body { background: #f4f5f7; color: #172b4d; min-height: 100vh; }
+  .hidden { display: none !important; }
+
+  /* ---- Auth ekranı ---- */
+  .auth-wrap { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+  .auth-card { background: #fff; border-radius: 10px; box-shadow: 0 4px 20px rgba(0,0,0,.08); padding: 36px; width: 380px; }
+  .auth-card h1 { font-size: 26px; margin-bottom: 4px; color: #0052cc; }
+  .auth-card p { color: #6b778c; margin-bottom: 22px; font-size: 14px; }
+  .auth-card input { width: 100%; padding: 11px 13px; margin-bottom: 12px; border: 2px solid #dfe1e6; border-radius: 6px; font-size: 14px; }
+  .auth-card input:focus { outline: none; border-color: #4c9aff; }
+  .btn { width: 100%; padding: 11px; background: #0052cc; color: #fff; border: none; border-radius: 6px; font-size: 15px; font-weight: 600; cursor: pointer; }
+  .btn:hover { background: #0747a6; }
+  .switch-link { display: block; text-align: center; margin-top: 14px; color: #0052cc; font-size: 13px; cursor: pointer; }
+  .error-msg { background: #ffebe6; color: #bf2600; padding: 10px; border-radius: 6px; font-size: 13px; margin-bottom: 12px; }
+
+  /* ---- Üst bar ---- */
+  header { background: #0052cc; color: #fff; padding: 12px 24px; display: flex; align-items: center; justify-content: space-between; }
+  header .logo { font-size: 18px; font-weight: 700; }
+  header .user-area { display: flex; align-items: center; gap: 14px; font-size: 14px; }
+  header button { background: rgba(255,255,255,.2); border: none; color: #fff; padding: 7px 14px; border-radius: 5px; cursor: pointer; font-size: 13px; }
+
+  /* ---- Proje listesi ---- */
+  .container { max-width: 1200px; margin: 0 auto; padding: 28px 24px; }
+  .section-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
+  .section-head h2 { font-size: 20px; }
+  .btn-sm { width: auto; padding: 8px 16px; font-size: 13px; }
+  .project-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
+  .project-card { background: #fff; border-radius: 8px; padding: 18px; box-shadow: 0 1px 4px rgba(0,0,0,.08); cursor: pointer; transition: transform .12s; }
+  .project-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,.12); }
+  .project-card h3 { font-size: 16px; margin-bottom: 6px; }
+  .project-card p { font-size: 13px; color: #6b778c; margin-bottom: 10px; min-height: 18px; }
+  .project-card .meta { font-size: 12px; color: #6b778c; display: flex; gap: 12px; }
+
+  /* ---- Kanban board ---- */
+  .board-head { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; flex-wrap: wrap; }
+  .board-head h2 { font-size: 20px; flex: 1; }
+  .back-link { color: #0052cc; cursor: pointer; font-size: 14px; }
+  .board { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; align-items: start; }
+  .column { background: #ebecf0; border-radius: 8px; padding: 12px; }
+  .column h4 { font-size: 12px; text-transform: uppercase; letter-spacing: .5px; color: #5e6c84; margin-bottom: 10px; display: flex; justify-content: space-between; }
+  .task-card { background: #fff; border-radius: 6px; padding: 12px; margin-bottom: 10px; box-shadow: 0 1px 2px rgba(0,0,0,.1); cursor: grab; }
+  .task-card h5 { font-size: 14px; margin-bottom: 6px; }
+  .task-card .desc { font-size: 12px; color: #6b778c; margin-bottom: 8px; }
+  .task-card .foot { display: flex; justify-content: space-between; align-items: center; font-size: 11px; }
+  .badge { padding: 2px 8px; border-radius: 10px; font-weight: 600; font-size: 10px; }
+  .p-Low { background: #e3fcef; color: #006644; }
+  .p-Medium { background: #deebff; color: #0747a6; }
+  .p-High { background: #fff0b3; color: #974f0c; }
+  .p-Critical { background: #ffebe6; color: #bf2600; }
+  .assignee { color: #6b778c; }
+  .task-card.dragging { opacity: .5; }
+  .column.drag-over { background: #d4e2fc; }
+
+  /* ---- Modal ---- */
+  .modal-bg { position: fixed; inset: 0; background: rgba(9,30,66,.5); display: flex; align-items: center; justify-content: center; z-index: 50; }
+  .modal { background: #fff; border-radius: 8px; padding: 26px; width: 420px; max-width: 92vw; }
+  .modal h3 { margin-bottom: 16px; font-size: 18px; }
+  .modal input, .modal textarea, .modal select { width: 100%; padding: 10px 12px; margin-bottom: 12px; border: 2px solid #dfe1e6; border-radius: 6px; font-size: 14px; font-family: inherit; }
+  .modal .row { display: flex; gap: 10px; }
+  .modal .actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 4px; }
+  .btn-ghost { background: none; color: #42526e; border: none; padding: 9px 16px; cursor: pointer; font-size: 14px; border-radius: 6px; }
+  .btn-ghost:hover { background: #ebecf0; }
+
+  /* ---- Toast bildirim ---- */
+  #toasts { position: fixed; bottom: 20px; right: 20px; z-index: 100; display: flex; flex-direction: column; gap: 8px; }
+  .toast { background: #172b4d; color: #fff; padding: 12px 18px; border-radius: 6px; font-size: 13px; box-shadow: 0 4px 12px rgba(0,0,0,.25); animation: slideIn .25s ease; }
+  @keyframes slideIn { from { transform: translateX(30px); opacity: 0; } to { transform: none; opacity: 1; } }
+
+  @media (max-width: 800px) { .board { grid-template-columns: 1fr 1fr; } }
+</style>
+</head>
+<body>
+
+<!-- ==================== GİRİŞ / KAYIT ==================== -->
+<div id="authScreen" class="auth-wrap">
+  <div class="auth-card">
+    <h1>TaskFlow</h1>
+    <p id="authSubtitle">Hesabına giriş yap</p>
+    <div id="authError" class="error-msg hidden"></div>
+    <input id="regName" class="hidden" type="text" placeholder="Ad Soyad">
+    <input id="authEmail" type="email" placeholder="Email">
+    <input id="authPassword" type="password" placeholder="Şifre">
+    <button id="authBtn" class="btn" onclick="submitAuth()">Giriş Yap</button>
+    <span class="switch-link" id="authSwitch" onclick="toggleAuthMode()">Hesabın yok mu? Kayıt ol</span>
+  </div>
+</div>
+
+<!-- ==================== ANA UYGULAMA ==================== -->
+<div id="app" class="hidden">
+  <header>
+    <div class="logo">📋 TaskFlow</div>
+    <div class="user-area">
+      <span id="userName"></span>
+      <button onclick="logout()">Çıkış</button>
+    </div>
+  </header>
+
+  <!-- Proje listesi -->
+  <div id="projectsView" class="container">
+    <div class="section-head">
+      <h2>Projelerim</h2>
+      <button class="btn btn-sm" onclick="openModal('projectModal')">+ Yeni Proje</button>
+    </div>
+    <div id="projectGrid" class="project-grid"></div>
+  </div>
+
+  <!-- Kanban board -->
+  <div id="boardView" class="container hidden">
+    <div class="board-head">
+      <span class="back-link" onclick="showProjects()">← Projeler</span>
+      <h2 id="boardTitle"></h2>
+      <button class="btn btn-sm" onclick="openModal('memberModal')">+ Üye Ekle</button>
+      <button class="btn btn-sm" onclick="openTaskModal()">+ Yeni Görev</button>
+    </div>
+    <div class="board" id="board"></div>
+  </div>
+</div>
+
+<!-- ==================== MODALLAR ==================== -->
+<div id="projectModal" class="modal-bg hidden">
+  <div class="modal">
+    <h3>Yeni Proje</h3>
+    <input id="pName" placeholder="Proje adı">
+    <textarea id="pDesc" placeholder="Açıklama (opsiyonel)" rows="3"></textarea>
+    <div class="actions">
+      <button class="btn-ghost" onclick="closeModals()">İptal</button>
+      <button class="btn btn-sm" onclick="createProject()">Oluştur</button>
+    </div>
+  </div>
+</div>
+
+<div id="taskModal" class="modal-bg hidden">
+  <div class="modal">
+    <h3>Yeni Görev</h3>
+    <input id="tTitle" placeholder="Görev başlığı">
+    <textarea id="tDesc" placeholder="Açıklama (opsiyonel)" rows="3"></textarea>
+    <div class="row">
+      <select id="tPriority">
+        <option value="0">Düşük</option>
+        <option value="1" selected>Orta</option>
+        <option value="2">Yüksek</option>
+        <option value="3">Kritik</option>
+      </select>
+      <select id="tAssignee"><option value="">Atanmadı</option></select>
+    </div>
+    <input id="tDue" type="date">
+    <div class="actions">
+      <button class="btn-ghost" onclick="closeModals()">İptal</button>
+      <button class="btn btn-sm" onclick="createTask()">Oluştur</button>
+    </div>
+  </div>
+</div>
+
+<div id="memberModal" class="modal-bg hidden">
+  <div class="modal">
+    <h3>Projeye Üye Ekle</h3>
+    <input id="mEmail" type="email" placeholder="Kullanıcının email adresi">
+    <div class="actions">
+      <button class="btn-ghost" onclick="closeModals()">İptal</button>
+      <button class="btn btn-sm" onclick="addMember()">Ekle</button>
+    </div>
+  </div>
+</div>
+
+<div id="toasts"></div>
+
+<script>
+// ================================================================
+//  TaskFlow Frontend — vanilla JS + SignalR
+//  API ile aynı origin'den sunulduğu için base URL boş.
+// ================================================================
+const API = '/api';
+let token = null;          // JWT (sayfa yenilenince tekrar giriş gerekir)
+let currentUser = null;
+let currentProject = null; // açık olan projenin detayı
+let hubConnection = null;
+let isRegisterMode = false;
+
+const STATUSES = [
+  { key: 'Backlog',    label: 'Backlog',     enumVal: 0 },
+  { key: 'InProgress', label: 'Devam Ediyor', enumVal: 1 },
+  { key: 'Review',     label: 'İncelemede',  enumVal: 2 },
+  { key: 'Done',       label: 'Tamamlandı',  enumVal: 3 },
+];
+
+// ---------------- Yardımcılar ----------------
+async function api(path, method = 'GET', body = null) {
+  const res = await fetch(API + path, {
+    method,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { 'Authorization': 'Bearer ' + token } : {})
+    },
+    body: body ? JSON.stringify(body) : null
+  });
+  if (res.status === 204) return null;
+  const data = await res.json().catch(() => null);
+  if (!res.ok) throw new Error(data?.error || 'Bir hata oluştu');
+  return data;
+}
+
+function toast(msg) {
+  const el = document.createElement('div');
+  el.className = 'toast';
+  el.textContent = msg;
+  document.getElementById('toasts').appendChild(el);
+  setTimeout(() => el.remove(), 4000);
+}
+
+function esc(s) {
+  const d = document.createElement('div');
+  d.textContent = s ?? '';
+  return d.innerHTML;
+}
+
+// ---------------- Auth ----------------
+function toggleAuthMode() {
+  isRegisterMode = !isRegisterMode;
+  document.getElementById('regName').classList.toggle('hidden', !isRegisterMode);
+  document.getElementById('authBtn').textContent = isRegisterMode ? 'Kayıt Ol' : 'Giriş Yap';
+  document.getElementById('authSubtitle').textContent = isRegisterMode ? 'Yeni hesap oluştur' : 'Hesabına giriş yap';
+  document.getElementById('authSwitch').textContent = isRegisterMode ? 'Zaten hesabın var mı? Giriş yap' : 'Hesabın yok mu? Kayıt ol';
+  document.getElementById('authError').classList.add('hidden');
+}
+
+async function submitAuth() {
+  const email = document.getElementById('authEmail').value.trim();
+  const password = document.getElementById('authPassword').value;
+  const errEl = document.getElementById('authError');
+  errEl.classList.add('hidden');
+  try {
+    let result;
+    if (isRegisterMode) {
+      const fullName = document.getElementById('regName').value.trim();
+      result = await api('/auth/register', 'POST', { fullName, email, password });
+    } else {
+      result = await api('/auth/login', 'POST', { email, password });
+    }
+    token = result.token;
+    currentUser = result;
+    document.getElementById('userName').textContent = result.fullName;
+    document.getElementById('authScreen').classList.add('hidden');
+    document.getElementById('app').classList.remove('hidden');
+    await connectSignalR();
+    await loadProjects();
+  } catch (e) {
+    errEl.textContent = e.message;
+    errEl.classList.remove('hidden');
+  }
+}
+
+function logout() {
+  token = null; currentUser = null; currentProject = null;
+  if (hubConnection) hubConnection.stop();
+  document.getElementById('app').classList.add('hidden');
+  document.getElementById('authScreen').classList.remove('hidden');
+}
+
+// ---------------- SignalR ----------------
+async function connectSignalR() {
+  hubConnection = new signalR.HubConnectionBuilder()
+    .withUrl('/hubs/tasks', { accessTokenFactory: () => token })
+    .withAutomaticReconnect()
+    .build();
+
+  // Başka bir kullanıcı görev durumu değiştirdiğinde board'u anlık güncelle
+  hubConnection.on('TaskStatusChanged', task => {
+    toast(`🔄 "${task.title}" görevi ${task.status} durumuna taşındı`);
+    if (currentProject && task.projectId === currentProject.id) refreshBoard();
+  });
+
+  hubConnection.on('TaskCreated', task => {
+    toast(`✨ Yeni görev: "${task.title}"`);
+    if (currentProject && task.projectId === currentProject.id) refreshBoard();
+  });
+
+  await hubConnection.start();
+}
+
+// ---------------- Projeler ----------------
+async function loadProjects() {
+  const projects = await api('/projects');
+  const grid = document.getElementById('projectGrid');
+  grid.innerHTML = projects.length === 0
+    ? '<p style="color:#6b778c">Henüz projen yok. "+ Yeni Proje" ile başla!</p>'
+    : projects.map(p => `
+      <div class="project-card" onclick="openProject(${p.id})">
+        <h3>${esc(p.name)}</h3>
+        <p>${esc(p.description || '')}</p>
+        <div class="meta">
+          <span>👤 ${p.memberCount} üye</span>
+          <span>✅ ${p.taskCount} görev</span>
+        </div>
+      </div>`).join('');
+}
+
+async function createProject() {
+  try {
+    await api('/projects', 'POST', {
+      name: document.getElementById('pName').value,
+      description: document.getElementById('pDesc').value || null
+    });
+    closeModals();
+    document.getElementById('pName').value = '';
+    document.getElementById('pDesc').value = '';
+    await loadProjects();
+    toast('Proje oluşturuldu ✅');
+  } catch (e) { toast('⚠️ ' + e.message); }
+}
+
+function showProjects() {
+  if (currentProject && hubConnection)
+    hubConnection.invoke('LeaveProject', currentProject.id).catch(() => {});
+  currentProject = null;
+  document.getElementById('boardView').classList.add('hidden');
+  document.getElementById('projectsView').classList.remove('hidden');
+  loadProjects();
+}
+
+// ---------------- Kanban Board ----------------
+async function openProject(id) {
+  currentProject = await api('/projects/' + id);
+  document.getElementById('projectsView').classList.add('hidden');
+  document.getElementById('boardView').classList.remove('hidden');
+  document.getElementById('boardTitle').textContent = currentProject.name;
+  if (hubConnection) hubConnection.invoke('JoinProject', id).catch(() => {});
+  renderBoard(currentProject.tasks);
+}
+
+async function refreshBoard() {
+  if (!currentProject) return;
+  const tasks = await api(`/projects/${currentProject.id}/tasks`);
+  renderBoard(tasks);
+}
+
+function renderBoard(tasks) {
+  const board = document.getElementById('board');
+  board.innerHTML = STATUSES.map(s => {
+    const items = tasks.filter(t => t.status === s.key);
+    return `
+      <div class="column" data-status="${s.enumVal}"
+           ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event)">
+        <h4>${s.label} <span>${items.length}</span></h4>
+        ${items.map(t => `
+          <div class="task-card" draggable="true" data-id="${t.id}"
+               ondragstart="onDragStart(event)" ondragend="onDragEnd(event)">
+            <h5>${esc(t.title)}</h5>
+            ${t.description ? `<div class="desc">${esc(t.description)}</div>` : ''}
+            <div class="foot">
+              <span class="badge p-${t.priority}">${t.priority}</span>
+              <span class="assignee">${esc(t.assignedUserName || '—')}</span>
+            </div>
+          </div>`).join('')}
+      </div>`;
+  }).join('');
+}
+
+// ---- Sürükle-bırak ile durum değiştirme ----
+let draggedTaskId = null;
+function onDragStart(e) { draggedTaskId = e.target.dataset.id; e.target.classList.add('dragging'); }
+function onDragEnd(e) { e.target.classList.remove('dragging'); }
+function onDragOver(e) { e.preventDefault(); e.currentTarget.classList.add('drag-over'); }
+function onDragLeave(e) { e.currentTarget.classList.remove('drag-over'); }
+async function onDrop(e) {
+  e.preventDefault();
+  e.currentTarget.classList.remove('drag-over');
+  const newStatus = parseInt(e.currentTarget.dataset.status);
+  try {
+    await api(`/tasks/${draggedTaskId}/status`, 'PATCH', { status: newStatus });
+    await refreshBoard();
+  } catch (err) { toast('⚠️ ' + err.message); }
+}
+
+// ---------------- Görev / Üye oluşturma ----------------
+function openTaskModal() {
+  // Atanacak kişi listesini projenin üyelerinden doldur
+  const sel = document.getElementById('tAssignee');
+  sel.innerHTML = '<option value="">Atanmadı</option>' +
+    currentProject.members.map(m => `<option value="${m.userId}">${esc(m.fullName)}</option>`).join('');
+  openModal('taskModal');
+}
+
+async function createTask() {
+  try {
+    const due = document.getElementById('tDue').value;
+    const assignee = document.getElementById('tAssignee').value;
+    await api(`/projects/${currentProject.id}/tasks`, 'POST', {
+      title: document.getElementById('tTitle').value,
+      description: document.getElementById('tDesc').value || null,
+      priority: parseInt(document.getElementById('tPriority').value),
+      dueDate: due ? due : null,
+      assignedUserId: assignee ? parseInt(assignee) : null
+    });
+    closeModals();
+    document.getElementById('tTitle').value = '';
+    document.getElementById('tDesc').value = '';
+    await refreshBoard();
+  } catch (e) { toast('⚠️ ' + e.message); }
+}
+
+async function addMember() {
+  try {
+    await api(`/projects/${currentProject.id}/members`, 'POST', {
+      email: document.getElementById('mEmail').value
+    });
+    closeModals();
+    document.getElementById('mEmail').value = '';
+    currentProject = await api('/projects/' + currentProject.id); // üye listesini tazele
+    toast('Üye eklendi ✅');
+  } catch (e) { toast('⚠️ ' + e.message); }
+}
+
+// ---------------- Modal yardımcıları ----------------
+function openModal(id) { document.getElementById(id).classList.remove('hidden'); }
+function closeModals() { document.querySelectorAll('.modal-bg').forEach(m => m.classList.add('hidden')); }
+document.querySelectorAll('.modal-bg').forEach(m =>
+  m.addEventListener('click', e => { if (e.target === m) closeModals(); }));
+
+// Enter ile form gönderme
+document.getElementById('authPassword').addEventListener('keydown', e => {
+  if (e.key === 'Enter') submitAuth();
+});
+</script>
+</body>
+</html>
