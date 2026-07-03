@@ -118,7 +118,7 @@ SignalR hub adresi: `/hubs/tasks` — istemci `JoinProject(projectId)` çağıra
 o projenin bildirim grubuna katılır; `TaskCreated` ve `TaskStatusChanged`
 event'lerini dinler.
 
-## Mülakatta Anlatabileceğin Noktalar
+## Tasarım Kararları
 
 - **Neden katmanlı mimari?** Test edilebilirlik ve bağımlılık yönetimi. Core katmanı
   hiçbir framework'e bağımlı değil; yarın EF Core yerine Dapper'a geçsem sadece
